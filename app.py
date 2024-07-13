@@ -1,12 +1,15 @@
 import yfinance as yf
 import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+import streamlit as st
 
 def fetch_stock_data(ticker, period='1y', interval='1d'):
     stock = yf.Ticker(ticker)
     data = stock.history(period=period, interval=interval)
     return data
-
-from sklearn.preprocessing import MinMaxScaler
 
 def preprocess_data(data):
     data = data[['Open', 'High', 'Low', 'Close']]
@@ -14,22 +17,17 @@ def preprocess_data(data):
     scaled_data = scaler.fit_transform(data)
     return scaled_data, scaler
 
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-
 def train_model(data):
     X = data[:, :-1]  # Features: Open, High, Low
     y = data[:, -1]   # Target: Close
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     model = LinearRegression()
     model.fit(X_train, y_train)
-    return model, X_test, y_test
+    return model, X_test, y_test, y
 
 def predict(model, data):
     predictions = model.predict(data)
     return predictions
-
-import streamlit as st
 
 def main():
     st.title("Stock Price Prediction App")
@@ -44,14 +42,22 @@ def main():
     
     # Preprocess data and train model
     scaled_data, scaler = preprocess_data(data)
-    model, X_test, y_test = train_model(scaled_data)
+    model, X_test, y_test, y_all = train_model(scaled_data)
     
     # Predict and display results
     predictions = predict(model, X_test)
-    predictions = scaler.inverse_transform([*X_test.T, predictions]).T  # Inverse scaling
     
+    # Inverse scale the predictions and actual values
+    X_test_full = np.hstack((X_test, predictions.reshape(-1, 1)))
+    all_data = scaler.inverse_transform(scaled_data)
+    scaled_pred_data = np.hstack((X_test, predictions.reshape(-1, 1)))
+    inv_predictions = scaler.inverse_transform(scaled_pred_data)[:, -1]
+    
+    inv_y_test = scaler.inverse_transform(np.hstack((X_test, y_test.reshape(-1, 1))))[:, -1]
+    
+    result_df = pd.DataFrame({'Actual': inv_y_test, 'Predicted': inv_predictions})
     st.write("Predicted vs Actual Prices")
-    st.write(pd.DataFrame({'Actual': y_test, 'Predicted': predictions[:, -1]}))
+    st.write(result_df)
 
 if __name__ == "__main__":
     main()
